@@ -7,6 +7,11 @@ The synthetic "auto" voice detects each utterance's language (lingua, built
 lazily from TTS_LANGUAGES) and hands each caller session a stable, distinct
 speaker from that language's pool. See detect_lang / resolve_auto_voice.
 
+With STRICT_LANGUAGE on (default), an "auto" request in a language lingua
+identifies as one NOT in TTS_LANGUAGES is rejected (HTTP 400) so the caller can
+tell the user it isn't supported, rather than mis-voiced. See
+unsupported_language.
+
 Derived from ginto-sakata/local-openai-tts-server (MIT, inactive since 2025-04):
 the OpenAI route shapes and the HuggingFace voice-download idea. Rewritten
 Piper-only (no Silero, no torch) with per-session / per-language voice
@@ -135,6 +140,13 @@ _DETECT_MARGIN = float(os.environ.get("TTS_DETECT_MARGIN", "0.15"))
 _detector = None
 _detector_built = False
 
+# STRICT_LANGUAGE: reject an utterance whose language isn't in TTS_LANGUAGES
+# instead of voicing it with the wrong speaker. Uses its own all-language
+# lingua detector (lazy).
+strict_language = True
+_all_detector = None
+_all_detector_built = False
+
 
 def _split_quality(voice_id: str):
     """'thorsten_emotional-medium' -> ('thorsten_emotional', 'medium').
@@ -205,6 +217,44 @@ def detect_lang(text: str) -> str:
     return _PRIMARY_LANG
 
 
+def _get_all_detector():
+    """Lingua detector over every language it has a model for (lazy). Only used
+    by unsupported_language()."""
+    global _all_detector, _all_detector_built
+    if _all_detector_built:
+        return _all_detector
+    _all_detector_built = True
+    try:
+        from lingua import Language, LanguageDetectorBuilder
+        langs = [getattr(Language, n) for n in {v for v in _ISO_TO_LINGUA.values() if v}]
+        _all_detector = LanguageDetectorBuilder.from_languages(*langs).build()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"lingua unavailable ({e}); STRICT_LANGUAGE check disabled")
+        _all_detector = None
+    return _all_detector
+
+
+def unsupported_language(text: str):
+    """ISO code of `text`'s language when lingua identifies it as one NOT in
+    TTS_LANGUAGES; None otherwise (including when it can't decide). lingua's own
+    minimum-distance guard is the only confidence check."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    det = _get_all_detector()
+    if det is None:
+        return None
+    lg = det.detect_language_of(text)
+    if lg is None:
+        return None
+    from lingua import Language
+    configured = {getattr(Language, _ISO_TO_LINGUA[c], None)
+                  for c in _LANGS_ORDERED if _ISO_TO_LINGUA.get(c)}
+    if lg in configured:
+        return None
+    return lg.iso_code_639_1.name.lower()
+
+
 def resolve_auto_voice(session, lang):
     """Pick a Piper voice for (session, detected language). Each session keeps a
     stable voice per language; distinct sessions get distinct voices until the
@@ -265,8 +315,10 @@ def load_config():
     global _LANGS_ORDERED, _PRIMARY_LANG, preferred_quality, use_cuda
     global piper_models_dir, piper_hf_repo_id, default_voice_id
     global api_voice_list, _detector, _detector_built
+    global strict_language, _all_detector, _all_detector_built
 
     _detector, _detector_built = None, False
+    _all_detector, _all_detector_built = None, False
     for d in (config_errors,):
         d.clear()
     for d in (voice_meta, loaded_voices, _lang_pool, _assignments, _in_use):
@@ -278,6 +330,8 @@ def load_config():
     raw_langs = cfg.get("TTS_LANGUAGES") or cfg.get("LANGUAGES") or "en"
     _LANGS_ORDERED = [x.strip().lower() for x in raw_langs.split(",") if x.strip()] or ["en"]
     _PRIMARY_LANG = _LANGS_ORDERED[0]
+    strict_language = (cfg.get("STRICT_LANGUAGE", "true") or "true").strip().lower() not in (
+        "0", "false", "no", "off")
     preferred_quality = (cfg.get("PREFERRED_QUALITY", "medium") or "medium").strip().lower()
     if preferred_quality not in _QUALITY_ORDER:
         config_errors.append(
@@ -380,6 +434,7 @@ def health():
         "languages": _LANGS_ORDERED,
         "primary_language": _PRIMARY_LANG,
         "preferred_quality": preferred_quality,
+        "strict_language": strict_language,
         "errors": config_errors,
     }
 
@@ -419,6 +474,14 @@ async def speech(request: Request):
                                 detail={"error": "Voice ID must be specified (or set DEFAULT_VOICE)"})
 
         if voice_id == "auto" or voice_id not in voice_meta:
+            if strict_language:
+                bad = unsupported_language(text)
+                if bad:
+                    logger.warning(f"[{rid}] rejected: language '{bad}' not in {_LANGS_ORDERED}")
+                    raise HTTPException(status_code=400, detail={"error": (
+                        f"Language '{bad}' is not enabled for speech "
+                        f"(TTS_LANGUAGES={','.join(_LANGS_ORDERED)}). Do not retry; "
+                        f"tell the user, in {_PRIMARY_LANG}, that '{bad}' isn't supported.")})
             lang = detect_lang(text)
             resolved = resolve_auto_voice(session_id, lang)
             if not resolved and default_voice_id and default_voice_id != "auto":

@@ -90,6 +90,7 @@ always overrides the shim.
 | var | default | meaning |
 |---|---|---|
 | `TTS_LANGUAGES` | `en,hu` | ordered; `[0]` is the primary/fallback language. Detection (lingua) is built lazily from this list; a single language skips detection |
+| `STRICT_LANGUAGE` | `true` | reject an `auto` utterance whose language isn't in `TTS_LANGUAGES` (`HTTP 400`) so the agent tells the user it's unsupported, instead of mis-voicing it |
 | `PREFERRED_QUALITY` | `medium` | first-pick Piper voice quality (`x_low`/`low`/`medium`/`high`); nearest available is used otherwise |
 | `ENABLED_PIPER_VOICES_<LANG>` | all defined | per-language speaker allow-list (bare names or `<name>-<quality>`). This is the pool sessions are assigned from |
 
