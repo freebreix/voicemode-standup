@@ -6,9 +6,11 @@ Two behaviours are injected into the `converse` MCP tool, both defaults-only
 1. wait_for_conch=True  -> a second agent queues for the floor instead of being
    turned away. hold_conch=True on turns that expect a reply, so a Q/A pair is
    not cut into at the turn boundary.
-2. voice=<stable per-session pick>  -> each Claude session is hashed onto one
-   voice from VOICEMODE_STANDUP_VOICES, so parallel agents are distinguishable
-   and a given session always sounds the same.
+2. voice="auto:<session-id>"  -> the TTS server detects the utterance language
+   and hands out a stable speaker per (session, language). Parallel agents stay
+   distinguishable; a given session sounds the same each time. The session id
+   rides in the voice string because voice-mode does not forward custom params.
+   Disable with VOICEMODE_STANDUP_AUTOVOICE=false.
 
 The session key is the harness session id (CLAUDE_CODE_SESSION_ID etc.); with a
 per-session stdio server that env var is present, and the process pid is the

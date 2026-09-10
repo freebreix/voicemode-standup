@@ -39,19 +39,16 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
 $gpu = -not $CpuOnly -and (Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' })
 Write-Host ("  GPU (CUDA) build: {0}" -f $(if ($gpu) {'yes'} else {'no - CPU only'}))
 
-Write-Host "`n== TTS fork ($($m.TtsTag)) =="
-if (-not (Test-Path (Join-Path $TtsDir 'main.py'))) {
-    git clone --branch $m.TtsTag --depth 1 $m.TtsRepo $TtsDir
-    git -C $TtsDir remote add upstream https://github.com/ginto-sakata/local-openai-tts-server.git 2>$null
-} else { Write-Host "  present" }
+Write-Host "`n== TTS server (tts/, tracked source) =="
 Copy-Item (Join-Path $ConfigDir 'tts.config.env.template') (Join-Path $TtsDir 'config.env') -Force
-if (-not (Test-Path (Join-Path $TtsDir '.venv\Scripts\python.exe'))) {
-    Write-Host "  creating venv + installing deps ..."
-    Push-Location $TtsDir
+Push-Location $TtsDir
+if (-not (Test-Path '.venv\Scripts\python.exe')) {
+    Write-Host "  creating venv ..."
     uv venv --python $m.PythonVersion .venv
-    uv pip install --python .venv\Scripts\python.exe -r requirements-windows.txt
-    Pop-Location
-} else { Write-Host "  venv present" }
+}
+Write-Host "  installing deps ..."
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+Pop-Location
 
 Write-Host "`n== whisper.cpp ($($m.WhisperCppTag)) =="
 $base = "https://github.com/ggml-org/whisper.cpp/releases/download/$($m.WhisperCppTag)"

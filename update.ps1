@@ -9,16 +9,14 @@ $RepoRoot = $PSScriptRoot
 . "$RepoRoot\scripts\_paths.ps1"
 $m = Import-PowerShellDataFile (Join-Path $RepoRoot 'manifest.psd1')
 
-Write-Host "== TTS fork -> $($m.TtsTag) =="
-if (Test-Path (Join-Path $TtsDir '.git')) {
-    git -C $TtsDir fetch --tags origin
-    git -C $TtsDir checkout --force $m.TtsTag
-    Copy-Item (Join-Path $ConfigDir 'tts.config.env.template') (Join-Path $TtsDir 'config.env') -Force
+Write-Host "== TTS server deps =="
+Copy-Item (Join-Path $ConfigDir 'tts.config.env.template') (Join-Path $TtsDir 'config.env') -Force
+if (Test-Path (Join-Path $TtsDir '.venv\Scripts\python.exe')) {
     Push-Location $TtsDir
-    uv pip install --python .venv\Scripts\python.exe -r requirements-windows.txt
+    uv pip install --python .venv\Scripts\python.exe -r requirements.txt
     Pop-Location
 } else {
-    Write-Warning "tts/ not a clone - run install.ps1"
+    Write-Warning "tts/.venv missing - run install.ps1"
 }
 
 Write-Host "`n== shim deps ($($m.VoiceModePin)) =="

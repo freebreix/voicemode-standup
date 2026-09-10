@@ -6,9 +6,8 @@
     WhisperCpuAsset      = 'whisper-bin-x64.zip'                  # CPU fallback
     WhisperModels        = @('large-v3-turbo', 'base')           # ggml-<name>.bin from HF ggerganov/whisper.cpp
 
-    # Piper OpenAI TTS wrapper - our fork of ginto-sakata/local-openai-tts-server
-    TtsRepo              = 'https://github.com/freebreix/local-openai-tts-server.git'
-    TtsTag              = 'v0.1.1-vm'
+    # Piper OpenAI TTS server lives in tts/ (tracked source, Piper-only).
+    # Started from ginto-sakata/local-openai-tts-server (MIT); see tts/LICENSE.
 
     # VoiceMode MCP - pinned in shim/pyproject.toml (voice-mode==8.12.0).
     # The shim wraps its `converse` tool; keep this note in sync with that pin.

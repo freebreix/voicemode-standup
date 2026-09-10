@@ -1,6 +1,8 @@
 # ── runtime artifacts (fetched / built by install.ps1) ──────────────────
-# /tts is cloned from freebreix/local-openai-tts-server@<tag>
-/tts
+# tts/ is tracked source; these are built/fetched at install time
+/tts/.venv
+/tts/piper_models
+/tts/config.env
 /whisper/bin
 /whisper/bin-cuda
 /whisper/models

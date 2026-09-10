@@ -1,0 +1,12 @@
+# Piper-only OpenAI-compatible TTS server. No torch (that was Silero's).
+# piper-tts>=1.8.0 is the piper1-gpl line: win_amd64 wheels, onnxruntime under
+# the hood, no piper-phonemize C++ build.
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-dotenv>=1.0
+PyYAML>=6.0
+huggingface-hub>=0.30
+numpy>=2.0
+piper-tts>=1.8.0
+soxr>=0.5                        # 22.05 kHz (Piper) -> 24 kHz (VoiceMode PCM streaming)
+lingua-language-detector>=2.0    # per-utterance language detection for the "auto" voice

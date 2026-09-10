@@ -5,11 +5,8 @@ Run by each Claude session (MCP `type: stdio`, command = `voicemode-standup`).
 from __future__ import annotations
 
 import functools
-import hashlib
 import os
 import sys
-
-_DEFAULT_POOL = "amy-medium,ryan-medium,lessac-medium,hfc_female-medium,kristin-medium"
 
 
 def _log(msg: str) -> None:
@@ -35,22 +32,19 @@ def _session_key() -> str:
     return f"pid-{os.getpid()}"
 
 
-def _pick_voice(pool: list[str], key: str) -> str:
-    h = int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16)
-    return pool[h % len(pool)]
-
-
 class _Injector:
     """Fills converse defaults. Applied to a kwargs dict (wrapping .fn) or to the
     raw arguments dict (wrapping Tool.run) - same logic, both are plain dicts."""
 
     def __init__(self):
-        self.pool = [v.strip() for v in os.environ.get("VOICEMODE_STANDUP_VOICES", _DEFAULT_POOL).split(",") if v.strip()]
         self.auto_wait = _truthy(os.environ.get("VOICEMODE_STANDUP_AUTOWAIT"), True)
         self.auto_hold = _truthy(os.environ.get("VOICEMODE_STANDUP_AUTOHOLD"), True)
+        self.auto_voice = _truthy(os.environ.get("VOICEMODE_STANDUP_AUTOVOICE"), True)
         self.key = _session_key()
-        self.voice = _pick_voice(self.pool, self.key) if self.pool else None
-        _log(f"session={self.key!r} voice={self.voice!r} autowait={self.auto_wait} autohold={self.auto_hold}")
+        _log(
+            f"session={self.key!r} autovoice={self.auto_voice} "
+            f"autowait={self.auto_wait} autohold={self.auto_hold}"
+        )
 
     def apply(self, d: dict) -> dict:
         if d is None:
@@ -64,8 +58,12 @@ class _Injector:
             and not _truthy(d.get("skip_conch"), False)
         ):
             d["hold_conch"] = True
-        if self.voice and not d.get("voice"):
-            d["voice"] = self.voice
+        # The TTS server owns voice selection now: it detects the language of
+        # each utterance and assigns a stable per-(session, language) speaker.
+        # voice-mode doesn't forward custom params, so the session id rides in
+        # the voice string as "auto:<session-id>" (parsed server-side).
+        if self.auto_voice and not d.get("voice"):
+            d["voice"] = f"auto:{self.key}"
         if not d.get("session_id"):
             d["session_id"] = self.key
         return d
