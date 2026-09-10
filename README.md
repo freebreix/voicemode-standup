@@ -1,15 +1,26 @@
-# voicemode-standup
+# 🎙️ voicemode-standup
 
-Native-Windows [VoiceMode](https://github.com/mbailey/voicemode) stack tuned for
-**many Claude Code sessions at once** — parallel agents take turns on the mic and
-each one gets its own voice, with zero per-project config.
+**Talk to Claude Code — and run a whole crew of agents that take turns on the
+mic, each in its own voice.** Native Windows, 100% local inference on your own
+box. No cloud, no API keys, no per-project setup.
+
+- 🔒 **Fully local** — Piper TTS + whisper.cpp STT run on your machine (CUDA, CPU
+  fallback). Nothing leaves the box.
+- 👥 **Multi-session** — run many Claude Code sessions side by side; they queue
+  for the mic automatically (the "conch") and speak when it's their turn.
+- 🗣️ **Multi-voice** — every session gets its own stable speaker, chosen for you.
+- 🌍 **Multi-language** — list the languages you want; each utterance is detected
+  (lingua) and voiced from that language's own speaker pool. Voices lazy-download.
+- ⚡ **One-command install** — `install.ps1` fetches everything, registers the MCP
+  server + two background services, and starts them. Open a fresh session, talk.
+- 🧩 **Zero per-project config** — no `.mcp.json` edits, no env vars per repo.
 
 Built on:
 - **[mbailey/voicemode](https://github.com/mbailey/voicemode)** — the MCP voice server (pinned `voice-mode==8.12.0`, wrapped, not forked).
 - **[Piper](https://github.com/OHF-Voice/piper1-gpl)** — the TTS voices. [`tts/`](tts/) is a small OpenAI-compatible server around them (started from [`ginto-sakata/local-openai-tts-server`](https://github.com/ginto-sakata/local-openai-tts-server), MIT; now a rewrite — tracked source, no fork).
 - **[ggml-org/whisper.cpp](https://github.com/ggml-org/whisper.cpp)** — CUDA `whisper-server` for STT (prebuilt release, unmodified).
 
-## What it adds over stock VoiceMode
+## ✨ What it adds over stock VoiceMode
 
 Stock VoiceMode already has the "conch" (a lock so only one agent speaks at a
 time) and can record the speaking voice — but you have to opt in per call, and it
@@ -23,7 +34,7 @@ never picks distinct voices. `voicemode-standup` makes it automatic:
 | Windows | WSL / Linux installers | native: Piper + whisper.cpp CUDA, one `install.ps1` |
 | language | one | any set you list (`TTS_LANGUAGES`); detected per utterance (lingua), each with its own speaker pool; voices lazy-download |
 
-## Architecture
+## 🏗️ Architecture
 
 ```
  Claude session A ─┐                        ┌─ shim/.venv python -m voicemode_standup  (stdio MCP, per session)
@@ -44,7 +55,7 @@ each Claude session launches its own via stdio, which is what makes
 `~/.voicemode/conch` lock file coordinates turn-taking across those separate
 processes.
 
-## Install
+## 📦 Install
 
 ```powershell
 git clone https://github.com/freebreix/voicemode-standup C:\RyzeCode\voicemode-standup
@@ -60,7 +71,7 @@ Then open a **fresh** Claude session — it picks up the `voicemode` MCP server 
 the `converse` tool. Run several sessions side by side; they'll wait for each
 other and sound different.
 
-## Config
+## ⚙️ Config
 
 **Turn-taking + session voice** — managed block of `~/.voicemode/voicemode.env`:
 
@@ -87,7 +98,7 @@ lingua can't distinguish from the others, is reported at
 `GET http://127.0.0.1:8880/v1/health` (`status: "error"`) and logged `CRITICAL`;
 the server still serves whatever is usable.
 
-## Layout
+## 🗂️ Layout
 
 ```
 install.ps1          idempotent installer / repair
@@ -100,7 +111,7 @@ tts/                 the Piper TTS server (tracked); .venv/ + piper_models/ + co
 whisper/    (gitignored)  bin-cuda/, bin/, models/
 ```
 
-## License
+## 📄 License
 
 MIT. Upstreams keep their own licenses (voicemode MIT, whisper.cpp MIT, Piper
 MIT; Piper/whisper model weights have their own terms).
