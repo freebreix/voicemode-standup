@@ -1,0 +1,19 @@
+# ── runtime artifacts (fetched / built by install.ps1) ──────────────────
+# /tts is cloned from freebreix/local-openai-tts-server@<tag>
+/tts
+/whisper/bin
+/whisper/bin-cuda
+/whisper/models
+/whisper/tmp
+/logs
+/voice_samples
+
+# ── python ──
+**/.venv/
+**/__pycache__/
+*.pyc
+
+# ── misc ──
+*.log
+.DS_Store
+Thumbs.db
