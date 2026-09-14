@@ -118,8 +118,16 @@ api_voice_list: list[dict] = []
 _lang_pool: dict[str, list[str]] = {}   # lang -> ordered speaker pool
 _assignments: dict[tuple, str] = {}     # (session, lang) -> voice id
 _in_use: dict[str, set] = {}            # lang -> {voice id handed out}
+_last_used: dict[tuple, float] = {}     # (session, lang) -> time.time() of last pick
 _voice_lock = threading.Lock()
 _load_lock = threading.Lock()
+
+# The TTS server is a long-lived background process (survives across days), so
+# an assignment must expire or _in_use grows without bound: once every pool
+# voice has ever been handed out, new sessions stop getting the first-choice
+# voice and permanently fall back to a hashed pick from the full pool. A dead
+# session never tells us it's gone, so we age assignments out instead.
+SESSION_TTL_SECONDS = 12 * 3600
 
 _QUALITY_ORDER = ("x_low", "low", "medium", "high")
 
@@ -255,20 +263,37 @@ def unsupported_language(text: str):
     return lg.iso_code_639_1.name.lower()
 
 
+def _prune_stale_assignments(now: float) -> None:
+    """Evict (session, lang) assignments idle longer than SESSION_TTL_SECONDS so
+    their voice returns to the free pool. Must be called with _voice_lock held."""
+    stale = [k for k, t in _last_used.items() if now - t > SESSION_TTL_SECONDS]
+    for key in stale:
+        session_lang_used = key[1]
+        voice = _assignments.pop(key, None)
+        _last_used.pop(key, None)
+        if voice is not None:
+            _in_use.get(session_lang_used, set()).discard(voice)
+
+
 def resolve_auto_voice(session, lang):
     """Pick a Piper voice for (session, detected language). Each session keeps a
     stable voice per language; distinct sessions get distinct voices until the
-    pool is exhausted, then they share it (no error). Returns None only if there
-    is no pool even after falling back to the primary language."""
+    pool is exhausted, then they share it (no error). Assignments idle past
+    SESSION_TTL_SECONDS are evicted first, so the pool recycles instead of
+    permanently filling up over the server's lifetime. Returns None only if
+    there is no pool even after falling back to the primary language."""
     pool, used_lang = _lang_pool.get(lang), lang
     if not pool:
         pool, used_lang = _lang_pool.get(_PRIMARY_LANG), _PRIMARY_LANG
     if not pool:
         return None
     key = (session or "_anon", used_lang)
+    now = time.time()
     with _voice_lock:
+        _prune_stale_assignments(now)
         cur = _assignments.get(key)
         if cur in pool:
+            _last_used[key] = now
             return cur
         used = _in_use.setdefault(used_lang, set())
         h = int(hashlib.sha1(session.encode("utf-8")).hexdigest(), 16) if session else 0
@@ -276,6 +301,7 @@ def resolve_auto_voice(session, lang):
         pick = free[h % len(free)] if free else pool[h % len(pool)]
         _assignments[key] = pick
         used.add(pick)
+        _last_used[key] = now
         return pick
 
 
@@ -316,12 +342,13 @@ def load_config():
     global piper_models_dir, piper_hf_repo_id, default_voice_id
     global api_voice_list, _detector, _detector_built
     global strict_language, _all_detector, _all_detector_built
+    global SESSION_TTL_SECONDS
 
     _detector, _detector_built = None, False
     _all_detector, _all_detector_built = None, False
     for d in (config_errors,):
         d.clear()
-    for d in (voice_meta, loaded_voices, _lang_pool, _assignments, _in_use):
+    for d in (voice_meta, loaded_voices, _lang_pool, _assignments, _in_use, _last_used):
         d.clear()
 
     cfg = dotenv_values(CONFIG_ENV_PATH) if os.path.exists(CONFIG_ENV_PATH) else {}
@@ -339,6 +366,12 @@ def load_config():
         preferred_quality = "medium"
     use_cuda = (cfg.get("DEVICE", "cpu") or "cpu").strip().lower() == "cuda"
     default_voice_id = (cfg.get("DEFAULT_VOICE", "") or "").strip()
+    ttl_hours = (cfg.get("SESSION_VOICE_TTL_HOURS") or "").strip()
+    if ttl_hours:
+        try:
+            SESSION_TTL_SECONDS = max(0.0, float(ttl_hours)) * 3600
+        except ValueError:
+            config_errors.append(f"SESSION_VOICE_TTL_HOURS '{ttl_hours}' is not a number; using default 12h.")
     threads = (cfg.get("TTS_CPU_THREADS") or cfg.get("TORCH_CPU_THREADS") or "0").strip()
     if threads.isdigit() and int(threads) > 0:
         os.environ.setdefault("OMP_NUM_THREADS", threads)

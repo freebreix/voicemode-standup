@@ -9,8 +9,21 @@ $services = "tts","whisper"
 
 foreach ($name in $services) {
     $taskName = "VoiceModeStandup\$name"
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    if ($Remove) { Write-Host "removed $taskName"; continue }
+    # Unregister-ScheduledTask can fail silently under nested/non-interactive
+    # elevation (no exception, task just stays put) - schtasks.exe is more
+    # reliable, and either way we verify rather than trust the call.
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+    if (Get-ScheduledTask -TaskName $name -TaskPath '\VoiceModeStandup\' -ErrorAction SilentlyContinue) {
+        schtasks.exe /Delete /TN $taskName /F *> $null
+    }
+    if ($Remove) {
+        if (Get-ScheduledTask -TaskName $name -TaskPath '\VoiceModeStandup\' -ErrorAction SilentlyContinue) {
+            Write-Warning "$taskName still registered - re-run elevated"
+        } else {
+            Write-Host "removed $taskName"
+        }
+        continue
+    }
 
     $action  = New-ScheduledTaskAction -Execute $pwsh `
         -Argument "-NoProfile -WindowStyle Hidden -File `"$ScriptsDir\start-$name.ps1`""

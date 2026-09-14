@@ -28,6 +28,21 @@ function Get-File($url, $out) {
     Write-Host "  downloading $(Split-Path $out -Leaf) ..."
     curl.exe -sL --fail -o $out $url
 }
+function Install-Nssm {
+    # Fetch + extract NSSM (pinned, manifest.psd1) into tools\nssm\<ver>\<arch>\nssm.exe.
+    $arch = if ([Environment]::Is64BitOperatingSystem) { 'win64' } else { 'win32' }
+    $to = Join-Path $RepoRoot "tools\nssm\$($m.NssmVersion)\$arch"
+    $exe = Join-Path $to 'nssm.exe'
+    if (Test-Path $exe) { return $exe }
+    $zip = Join-Path $dl "nssm-$($m.NssmVersion).zip"
+    Get-File $m.NssmZipUrl $zip
+    $ex = Join-Path $dl 'nssm-x'
+    Expand-Archive -Force $zip $ex
+    $from = Join-Path $ex "nssm-$($m.NssmVersion)\$arch"
+    New-Item -ItemType Directory -Force -Path $to | Out-Null
+    Copy-Item (Join-Path $from 'nssm.exe') $exe -Force
+    return $exe
+}
 
 Write-Host "== prereqs =="
 Need uv    "install from https://astral.sh/uv"
@@ -107,14 +122,32 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
     Write-Host "  claude mcp add voicemode --scope user -- `"$shimPy`" -m voicemode_standup"
 }
 
-Write-Host "`n== Scheduled Tasks =="
-& "$ScriptsDir\register-tasks.ps1"
+Write-Host "`n== background services (TTS :8880, whisper :2022) =="
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).
+    IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$useServices = $false
+if ($isAdmin) {
+    try {
+        Install-Nssm | Out-Null
+        & "$ScriptsDir\register-services.ps1"
+        $useServices = $true
+    } catch {
+        Write-Warning "Windows Service setup failed ($_) - falling back to Scheduled Tasks."
+    }
+} else {
+    Write-Warning ("Not running elevated - can't register Windows Services (the SCM requires admin). " +
+        "Using Scheduled Tasks instead (hidden-window processes). Re-run 'pwsh -File install.ps1' as " +
+        "Administrator later to switch to services - no window, ever.")
+}
 
-if (-not $SkipServices) {
-    Write-Host "`n== start services =="
-    & "$ScriptsDir\stop-all.ps1"
-    Start-Sleep 1
-    & "$ScriptsDir\start-all.ps1"
+if (-not $useServices) {
+    & "$ScriptsDir\register-tasks.ps1"
+    if (-not $SkipServices) {
+        Write-Host "`n== start services =="
+        & "$ScriptsDir\stop-all.ps1"
+        Start-Sleep 1
+        & "$ScriptsDir\start-all.ps1"
+    }
 }
 
 Write-Host "`nDone. Open a fresh Claude session and have it call the converse tool."

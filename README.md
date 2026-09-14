@@ -12,7 +12,8 @@ box. No cloud, no API keys, no per-project setup.
 - 🌍 **Multi-language** — list the languages you want; each utterance is detected
   (lingua) and voiced from that language's own speaker pool. Voices lazy-download.
 - ⚡ **One-command install** — `install.ps1` fetches everything, registers the MCP
-  server + two background services, and starts them. Open a fresh session, talk.
+  server + two backend Windows Services (via NSSM — no terminal window, ever),
+  and starts them. Open a fresh session, talk.
 - 🧩 **Zero per-project config** — no `.mcp.json` edits, no env vars per repo.
 
 Built on:
@@ -44,16 +45,20 @@ never picks distinct voices. `voicemode-standup` makes it automatic:
    shared file lock  ~/.voicemode/conch  ◄──┘   (turn-taking across the separate processes)
                                             │
               ┌─────────────────────────────┴───────────────┐
-        TTS :8880  (tts/, Piper, scheduled task)     STT :2022  (whisper.cpp CUDA, scheduled task)
+        TTS :8880  (tts/, Piper, Windows Service)    STT :2022  (whisper.cpp CUDA, Windows Service)
         └ detects utterance language, then hands each session a stable speaker
-          from that language's pool (shares once the pool is exhausted)
+          from that language's pool (shares once the pool is exhausted;
+          idle assignments free up after SESSION_VOICE_TTL_HOURS)
 ```
 
-Only **two** background services (TTS, STT). The MCP server is **not** a daemon —
-each Claude session launches its own via stdio, which is what makes
-`CLAUDE_CODE_SESSION_ID` available so voices stay stable per session. The
-`~/.voicemode/conch` lock file coordinates turn-taking across those separate
-processes.
+Only **two** background services (TTS, STT), registered as real Windows
+Services via [NSSM](https://nssm.cc/) — they run in Session 0, so there's
+never a console window to see or close. (No admin at install time → falls
+back to hidden-window Scheduled Tasks; re-run `install.ps1` elevated later to
+switch.) The MCP server is **not** a daemon — each Claude session launches its
+own via stdio, which is what makes `CLAUDE_CODE_SESSION_ID` available so
+voices stay stable per session. The `~/.voicemode/conch` lock file coordinates
+turn-taking across those separate processes.
 
 ## 📦 Install
 
@@ -65,7 +70,16 @@ pwsh -File install.ps1          # -CpuOnly if no NVIDIA GPU
 
 It fetches the pinned upstreams (`manifest.psd1`), creates the TTS venv, writes a
 managed block into `~/.voicemode/voicemode.env`, registers the MCP server
-(user scope) and the two Scheduled Tasks, and starts the services.
+(user scope) and the two backend Windows Services (NSSM — needs an admin
+elevation prompt; declines gracefully to Scheduled Tasks if you say no), and
+starts them.
+
+Manage the services directly once installed:
+```powershell
+Get-Service VoiceModeStandup* | Format-Table Name,Status
+Stop-Service VoiceModeStandupTTS,VoiceModeStandupWhisper   # or: pwsh -File scripts\stop-all.ps1
+Start-Service VoiceModeStandupTTS,VoiceModeStandupWhisper
+```
 
 Then open a **fresh** Claude session — it picks up the `voicemode` MCP server and
 the `converse` tool. Run several sessions side by side; they'll wait for each
@@ -93,6 +107,7 @@ always overrides the shim.
 | `STRICT_LANGUAGE` | `true` | reject an `auto` utterance whose language isn't in `TTS_LANGUAGES` (`HTTP 400`) so the agent tells the user it's unsupported, instead of mis-voicing it |
 | `PREFERRED_QUALITY` | `medium` | first-pick Piper voice quality (`x_low`/`low`/`medium`/`high`); nearest available is used otherwise |
 | `ENABLED_PIPER_VOICES_<LANG>` | all defined | per-language speaker allow-list (bare names or `<name>-<quality>`). This is the pool sessions are assigned from |
+| `SESSION_VOICE_TTL_HOURS` | `12` | a (session, language) voice assignment idle longer than this frees back into the pool. The TTS service runs for days, so without this, once every pool voice has ever been handed out, new sessions permanently stop getting the first-pick voice |
 
 Voices download from HuggingFace on first use. A language with no voice, or one
 lingua can't distinguish from the others, is reported at
@@ -104,12 +119,14 @@ the server still serves whatever is usable.
 ```
 install.ps1          idempotent installer / repair
 update.ps1           refresh deps + re-merge env block after a manifest bump
-manifest.psd1        pinned versions (whisper.cpp tag, voice-mode pin, python)
-scripts/             _paths, _guard, start-tts, start-whisper, start-all, stop-all, register-tasks
+manifest.psd1        pinned versions (whisper.cpp tag, voice-mode pin, python, NSSM)
+scripts/             _paths, _guard, _health, start-tts, start-whisper, start-all, stop-all,
+                      register-services (NSSM, needs admin), register-tasks (non-admin fallback)
 shim/                voicemode_standup - the converse wrapper + pinned voice-mode
 config/              tts config template, voicemode.env managed block
 tts/                 the Piper TTS server (tracked); .venv/ + piper_models/ + config.env gitignored
 whisper/    (gitignored)  bin-cuda/, bin/, models/
+tools/      (gitignored)  nssm/ - fetched by install.ps1
 ```
 
 ## 📄 License

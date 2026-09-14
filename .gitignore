@@ -9,6 +9,7 @@
 /whisper/tmp
 /logs
 /voice_samples
+/tools
 
 # ── python ──
 **/.venv/

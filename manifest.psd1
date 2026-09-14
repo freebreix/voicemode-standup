@@ -14,4 +14,11 @@
     VoiceModePin         = 'voice-mode==8.12.0'
 
     PythonVersion        = '3.12'
+
+    # NSSM (nssm.cc) wraps tts/whisper as real Windows Services (Session 0,
+    # no console window ever) instead of hidden-window Scheduled Tasks.
+    # register-services.ps1 needs admin; register-tasks.ps1 stays as the
+    # non-admin fallback install.ps1 uses when it can't elevate.
+    NssmVersion           = '2.24'
+    NssmZipUrl            = 'https://nssm.cc/release/nssm-2.24.zip'
 }
